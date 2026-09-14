@@ -1,124 +1,119 @@
-# 🏭 Wafer Yield Root-Cause & Risk Prediction Dashboard
+# ⚡ YIELD HUNTER — Intelligent Yield & Opportunity Analysis Platform
 
-**IBM Bob AI Innovation Hackathon — CHARUSAT**
+**Enterprise Semiconductor Process Analytics, Precision Root-Cause Diagnostics & Yield Recovery Engine**  
+*IBM Bob AI Innovation Hackathon — CHARUSAT*
 
-## Problem Statement
+---
 
-Semiconductor fabs run many wafer lots, and yield (the % of good chips produced)
-fluctuates lot to lot. When yield drops, process engineers need to quickly:
-1. Understand *why* yield dropped
-2. Know which process parameters are most likely responsible
-3. Get concrete next steps to investigate
-4. Flag upcoming lots that are at risk **before** they run, based on planned
-   process parameters
+## 🎯 Executive Summary & Problem Statement
 
-Doing this manually from raw process logs and defect reports is slow and
-inconsistent. This project is a decision-support prototype that automates it.
+In semiconductor fabrication facilities, wafer lot yield (the percentage of functional dies per wafer) is the single most critical manufacturing KPI. Small excursions in process chamber conditions directly lead to wafer defect clusters and substantial yield losses.
 
-## Proposed Solution
+When yield drops, process integration and yield engineers must quickly:
+1. **Identify and isolate root causes** from multivariate chamber sensors and defect inspection maps.
+2. **Quantify yield recovery opportunities** across affected lots.
+3. **Obtain prescriptive corrective actions** (furnace calibration, vacuum regulator repair, RF tuning).
+4. **Pre-screen upcoming lots** before physical dispatch to prevent scrap.
 
-A Streamlit dashboard that takes historical wafer-lot data (Lot ID, Temperature,
-Pressure, Power, Gas Flow, Defect count, Yield) and:
+**Yield Hunter** transforms this manual, error-prone workflow into an automated, interactive, and transparent SaaS-grade analytics platform.
 
-1. **Analyzes** the relationship between process parameters, defects, and yield
-   (scatter plots, correlation matrix, yield trend)
-2. **Ranks contributing factors** using a Random Forest model's feature
-   importances — trained to predict yield from process parameters
-3. **Generates rule-based recommendations** — flags any parameter more than
-   1.5 standard deviations from the "healthy lot" median and suggests a
-   concrete investigation action (check sensor calibration, inspect for leaks,
-   review PM records, etc.)
-4. **Predicts risk for a new/upcoming lot** — engineer enters planned
-   Temperature/Pressure/Power/Defects/Gas Flow, and the trained model predicts
-   expected yield and classifies the lot as 🟢 LOW / 🟡 MEDIUM / 🔴 HIGH risk,
-   with the specific abnormal parameters called out
+---
 
-**Important framing:** the "root cause ranking" is a *statistical association*
-ranking from model feature importance, not a proven causal analysis — this is
-stated explicitly in the UI to stay scientifically honest for a fab context.
-
-## Tech Stack
-
-| Layer | Tool |
-|---|---|
-| Language | Python 3.10+ |
-| Data handling | Pandas, NumPy |
-| ML | Scikit-learn (RandomForestRegressor) |
-| Visualization | Plotly Express |
-| Dashboard/UI | Streamlit |
-
-## Project Structure
+## 🔄 End-to-End User Flow
 
 ```
-wafer-yield-app/
-├── app.py              # Streamlit UI (4 pages)
-├── engine.py           # Core analysis/ML logic (no UI code — testable)
-├── generate_data.py    # Creates the synthetic demo dataset
-├── wafer_data.csv      # Demo dataset (500 lots)
-├── requirements.txt
-└── README.md
+OPEN WEBSITE
+     ↓
+ DATA INPUT (Upload CSV / Try Demo Dataset / Download Template)
+     ↓
+ CSV VALIDATION & INTEGRITY AUDIT
+     ↓
+ DATA PREVIEW (First 10 rows, rows/cols count)
+     ↓
+ COLUMN MAPPING (Intelligent auto-match + manual override)
+     ↓
+ 🚀 RUN YIELD ANALYSIS (Manual on-demand trigger with spinner)
+     ↓
+ PROFESSIONAL RESULTS DASHBOARD (KPIs, Plotly Analytics, Excursions)
+     ↓
+ 📥 DOWNLOAD RESULTS CSV
 ```
 
-## How to Run
+---
+
+## 🛠️ Required vs. Optional Columns
+
+Yield Hunter supports flexible dataset schemas via automated and manual **Column Mapping**. The core algorithms require:
+
+| Standard Field | Requirement | Description | Auto-Match Heuristics |
+|---|---|---|---|
+| `Yield` | **Required** | Actual lot yield percentage (0–100%) | `yield`, `yield%`, `yield_pct`, `recovery`, `output_yield` |
+| `Defects` | **Required** | Defect count / particle density | `defects`, `defect`, `defect_count`, `particles`, `errors` |
+| `Temperature` | **Required** | Process chamber temperature (°C) | `temperature`, `temp`, `temp_c`, `temp_deg`, `chamber_temp` |
+| `Pressure` | **Required** | Chamber pressure (torr / bar) | `pressure`, `press`, `chamber_pressure`, `pressure_torr` |
+| `Power` | **Required** | RF / heater power (Watts) | `power`, `rf_power`, `watts`, `heater_power` |
+| `GasFlow` | Optional | Mass flow controller rate (sccm) | `gasflow`, `gas_flow`, `flow`, `sccm`, `gas_sccm` |
+| `Lot` | Optional | Lot / batch identifier (auto-generated if omitted) | `lot`, `lot_id`, `wafer_lot`, `batch`, `run_id` |
+
+---
+
+## ✨ Key Features & Capabilities
+
+- **Real CSV Uploader & Ingestion**: Direct pandas-backed file parsing with strict error handling, schema auditing, and format validation.
+- **Smart Column Mapping**: Automatically detects and maps your CSV column names to engine requirements with manual dropdown confirmation.
+- **Data Quality Audit**: Immediate visibility into row count, clean valid rows, duplicate rows, missing nulls, and non-numeric value flags.
+- **On-Demand Analysis**: Heavy model training and analytics run only when clicking **🚀 Run Yield Analysis**, preventing unnecessary recalculations.
+- **Modern Dark Navy Analytics Theme**: High-contrast, responsive SaaS styling with rounded cards, subtle glows, and clean typography.
+- **Real Calculated KPI Metrics**: Audits total lots, average yield, median yield, best lot yield, low-yield excursion count, and opportunity gap.
+- **Interactive Plotly Visualizations**:
+  - Lot yield distribution with excursion cutoff and mean benchmarks.
+  - Root-cause attribution via Random Forest feature importance.
+  - Parameter-vs-yield interactive scatter explorer with defect heatmaps and OLS trendlines.
+  - Parameter correlation matrix heatmap.
+  - Run-sequence lot yield trendline.
+- **Actionable Opportunity Sizing**: Identifies underperforming lots, quantifies individual yield recovery gaps, diagnoses primary excursion factors, and prescribes fab-validated maintenance actions.
+- **Results Export**: One-click download of the complete analyzed results CSV.
+- **Pre-Dispatch Future Lot Predictor**: Enter planned parameters for an upcoming lot to forecast yield and risk tier (🟢 LOW / 🟡 MEDIUM / 🔴 HIGH) with z-score diagnostics.
+
+---
+
+## 💻 How to Run Locally
 
 ```bash
-# 1. Clone the repo and cd into the project folder
-git clone <your-repo-url>
-cd wafer-yield-app
+# 1. Clone the repository
+git clone https://github.com/Krishu50/bob-ai-hackathon--Yield-Hunters-.git
+cd bob-ai-hackathon--Yield-Hunters-
 
-# 2. Install dependencies
+# 2. Set up virtual environment and install dependencies
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
-# 3. (Optional) Regenerate the demo dataset
-python generate_data.py
+# 3. Run unit tests
+python test_engine.py
 
-# 4. Launch the dashboard
+# 4. Launch the Streamlit application
 streamlit run app.py
 ```
 
-The app opens in your browser at `http://localhost:8501`.
+The application will open in your browser at `http://localhost:8501`.
 
-## Using Your Own Data
+---
 
-Upload a CSV via the sidebar with (at minimum) these columns:
+## 🧪 Automated Testing
 
-| Column | Description |
-|---|---|
-| `Lot` | Lot identifier (optional — auto-generated if missing) |
-| `Temperature` | Process temperature |
-| `Pressure` | Process pressure |
-| `Power` | Process power |
-| `Defects` | Defect count |
-| `Yield` | Yield % |
-| `GasFlow` | Gas flow rate (optional) |
+Run the test suite at any time:
+```bash
+python test_engine.py
+```
+All 11 unit tests verify schema validation, summary metrics, random forest importance, risk prediction, lot opportunity sizing, and template generation.
 
-The app validates columns, coerces numeric types, and drops invalid rows with
-a warning shown in the sidebar.
+---
 
-## Dashboard Pages
+## ☁️ Streamlit Cloud Deployment
 
-1. **🏠 Dashboard** — total lots, average yield, low-yield lot count, yield
-   distribution histogram
-2. **📊 Yield & Defect Analysis** — yield trend across lots, parameter-vs-yield
-   scatter plots with trendlines, correlation heatmap
-3. **🎯 Root Cause** — ranked contributing factors bar chart + list of
-   low-yield lots for investigation
-4. **⚠️ Future Lot Prediction** — input form for a planned lot's parameters →
-   predicted yield, risk level, flagged abnormal parameters, and recommended
-   corrective actions
+The repository is fully optimized for continuous deployment on **Streamlit Cloud**:
+- Dependencies in `requirements.txt` (`streamlit>=1.32`, `pandas>=2.0`, `numpy>=1.24`, `scikit-learn>=1.3`, `plotly>=5.18`, `statsmodels>=0.14`).
+- Relative file paths and session state caching.
+- No special native dependencies or system packages required.
 
-## What This Prototype Does NOT Do
-
-This is a decision-support software prototype, not:
-- An actual semiconductor fab simulation or physical sensor system
-- A proven causal-inference engine (ranking is association-based, clearly
-  labeled as such)
-- A production-grade MLOps pipeline — model is retrained in-session for
-  demo purposes
-
-## Future Improvements
-
-- SHAP values for per-lot explainability instead of global feature importance
-- Time-series / drift detection (e.g. CUSUM) for early excursion alerts
-- Multi-model ensemble with confidence intervals on predicted yield
-- Integration with real fab MES/SPC systems via API

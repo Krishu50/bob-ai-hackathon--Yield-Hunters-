@@ -61,14 +61,26 @@ def get_feature_columns(df: pd.DataFrame):
 
 def compute_summary(df: pd.DataFrame) -> dict:
     low_thresh = df["Yield"].quantile(LOW_YIELD_THRESHOLD_PERCENTILE)
+    avg_yield = df["Yield"].mean()
+    high_thresh = df["Yield"].quantile(0.75)
+    healthy_benchmark = df[df["Yield"] >= high_thresh]["Yield"].median() if (df["Yield"] >= high_thresh).any() else avg_yield
+    opportunity_gap = max(0.0, healthy_benchmark - avg_yield)
+    improvement_pct = (opportunity_gap / avg_yield * 100) if avg_yield > 0 else 0.0
+
     return {
         "total_lots": len(df),
-        "average_yield": round(df["Yield"].mean(), 2),
+        "average_yield": round(avg_yield, 2),
+        "median_yield": round(df["Yield"].median(), 2),
+        "best_yield": round(df["Yield"].max(), 2),
+        "best_lot": df.loc[df["Yield"].idxmax(), "Lot"] if "Lot" in df.columns else None,
         "low_yield_threshold": round(low_thresh, 2),
         "low_yield_lots": int((df["Yield"] <= low_thresh).sum()),
         "avg_defects": round(df["Defects"].mean(), 2),
         "worst_lot": df.loc[df["Yield"].idxmin(), "Lot"] if "Lot" in df.columns else None,
         "worst_yield": round(df["Yield"].min(), 2),
+        "healthy_benchmark": round(healthy_benchmark, 2),
+        "potential_opportunity": round(opportunity_gap, 2),
+        "improvement_pct": round(improvement_pct, 2),
     }
 
 
@@ -219,3 +231,84 @@ def predict_new_lot(trained, input_values: dict):
         "findings": findings,
         "top_factors": trained["importance_df"]["Factor"].tolist()[:3],
     }
+
+
+def compute_lot_opportunities(df: pd.DataFrame, trained: dict) -> pd.DataFrame:
+    """
+    Ranks lots by yield recovery opportunity (lowest yield / highest deficit first).
+    Diagnoses the primary parameter excursion contributing to the deficit.
+    """
+    baseline = trained["baseline"]
+    features = trained["features"]
+    thresholds = trained["thresholds"]
+    high_benchmark = df[df["Yield"] >= df["Yield"].quantile(0.75)]["Yield"].median() if (df["Yield"] >= df["Yield"].quantile(0.75)).any() else df["Yield"].mean()
+
+    RULES_SUMMARY = {
+        "Temperature": "Inspect furnace/chamber calibration & thermal drift",
+        "Pressure": "Check pressure regulator, vacuum valves & inspect leaks",
+        "Power": "Recalibrate RF generator & inspect matching network",
+        "Defects": "Perform SEM defect inspection & clean chamber",
+        "GasFlow": "Recalibrate mass flow controllers (MFC) & inspect lines",
+    }
+
+    rows = []
+    for idx, row in df.iterrows():
+        lot_id = row["Lot"] if "Lot" in row else f"Lot_{idx+1:03d}"
+        y_val = float(row["Yield"])
+        deficit = max(0.0, high_benchmark - y_val)
+
+        # Risk classification
+        if y_val <= thresholds["high_risk_below"]:
+            risk_cat = "High Risk"
+        elif y_val <= thresholds["medium_risk_below"]:
+            risk_cat = "Medium Risk"
+        else:
+            risk_cat = "Optimal"
+
+        # Determine primary excursion factor
+        max_z = 0.0
+        primary_factor = "None (In Spec)"
+        for f in features:
+            if f in row and f in baseline:
+                med = baseline[f]["median"]
+                std = baseline[f]["std"] or 1e-6
+                z = (float(row[f]) - med) / std
+                if abs(z) > abs(max_z):
+                    max_z = z
+                    direction = "high" if z > 0 else "low"
+                    primary_factor = f"{f} ({direction})"
+
+        action = RULES_SUMMARY.get(primary_factor.split(" ")[0], "Monitor routine process logs") if abs(max_z) >= 1.5 else "Within normal operating boundaries"
+
+        rec = {
+            "Lot": lot_id,
+            "Yield (%)": round(y_val, 2),
+            "Defects": int(row["Defects"]) if "Defects" in row else 0,
+            "Opportunity Gap (%)": round(deficit, 2),
+            "Risk Tier": risk_cat,
+            "Primary Root Cause": primary_factor if abs(max_z) >= 1.2 else "Nominal",
+            "Recommended Action": action,
+        }
+        for f in features:
+            if f in row:
+                rec[f] = round(float(row[f]), 2)
+        rows.append(rec)
+
+    opp_df = pd.DataFrame(rows)
+    # Sort with highest opportunity gap (lowest yield) first
+    opp_df = opp_df.sort_values("Opportunity Gap (%)", ascending=False).reset_index(drop=True)
+    return opp_df
+
+
+def generate_template_csv() -> str:
+    """Returns a valid CSV template string matching Yield Hunter's expected schema."""
+    template_data = (
+        "Lot,Temperature,Pressure,Power,GasFlow,Defects,Yield\n"
+        "L001,452.1,2.18,804.5,120.2,2,98.4\n"
+        "L002,448.9,2.21,798.1,119.8,3,97.6\n"
+        "L003,476.3,2.95,845.0,128.4,18,68.2\n"
+        "L004,451.0,2.19,801.3,121.0,1,99.1\n"
+        "L005,462.8,2.54,820.7,124.5,9,86.5\n"
+    )
+    return template_data
+

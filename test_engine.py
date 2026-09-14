@@ -90,6 +90,37 @@ def test_predict_missing_input_raises():
         pass
 
 
+def test_expanded_summary_metrics():
+    df, _ = load_and_validate(make_sample_df())
+    summary = compute_summary(df)
+    for key in ["best_yield", "best_lot", "potential_opportunity", "improvement_pct", "median_yield"]:
+        assert key in summary
+    assert summary["best_yield"] >= summary["average_yield"]
+    assert summary["potential_opportunity"] >= 0
+
+
+def test_compute_lot_opportunities():
+    from engine import compute_lot_opportunities
+    df, _ = load_and_validate(make_sample_df())
+    trained = train_risk_model(df)
+    opps = compute_lot_opportunities(df, trained)
+    assert len(opps) == len(df)
+    assert "Opportunity Gap (%)" in opps.columns
+    assert "Risk Tier" in opps.columns
+    assert "Recommended Action" in opps.columns
+    # Check sorted descending by Opportunity Gap
+    assert opps["Opportunity Gap (%)"].iloc[0] >= opps["Opportunity Gap (%)"].iloc[-1]
+
+
+def test_generate_template_csv():
+    from engine import generate_template_csv
+    import io
+    csv_str = generate_template_csv()
+    df = pd.read_csv(io.StringIO(csv_str))
+    assert all(col in df.columns for col in ["Temperature", "Pressure", "Power", "Defects", "Yield"])
+    assert len(df) == 5
+
+
 if __name__ == "__main__":
     # Manual runner if pytest isn't installed
     import sys
@@ -102,6 +133,9 @@ if __name__ == "__main__":
         test_predict_risky_lot_flags_abnormal_params,
         test_predict_healthy_lot_is_low_risk,
         test_predict_missing_input_raises,
+        test_expanded_summary_metrics,
+        test_compute_lot_opportunities,
+        test_generate_template_csv,
     ]
     passed, failed = 0, 0
     for t in tests:
@@ -114,3 +148,4 @@ if __name__ == "__main__":
             failed += 1
     print(f"\n{passed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
+
