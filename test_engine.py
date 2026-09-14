@@ -90,35 +90,31 @@ def test_predict_missing_input_raises():
         pass
 
 
-def test_expanded_summary_metrics():
+def test_compute_spc_limits():
     df, _ = load_and_validate(make_sample_df())
-    summary = compute_summary(df)
-    for key in ["best_yield", "best_lot", "potential_opportunity", "improvement_pct", "median_yield"]:
-        assert key in summary
-    assert summary["best_yield"] >= summary["average_yield"]
-    assert summary["potential_opportunity"] >= 0
+    from engine import compute_spc_limits
+    spc = compute_spc_limits(df["Yield"])
+    assert "mean" in spc and "ucl" in spc and "lcl" in spc
+    assert spc["ucl"] >= spc["mean"] >= spc["lcl"]
 
 
-def test_compute_lot_opportunities():
-    from engine import compute_lot_opportunities
+def test_generate_wafer_map():
+    from engine import generate_wafer_map
+    wafer = generate_wafer_map("L001", defect_count=12, yield_pct=88.5)
+    assert len(wafer) > 100
+    assert "status" in wafer.columns
+    assert set(wafer["status"].unique()).issubset({"Pass", "Defect"})
+
+
+def test_batch_predict_lots():
     df, _ = load_and_validate(make_sample_df())
     trained = train_risk_model(df)
-    opps = compute_lot_opportunities(df, trained)
-    assert len(opps) == len(df)
-    assert "Opportunity Gap (%)" in opps.columns
-    assert "Risk Tier" in opps.columns
-    assert "Recommended Action" in opps.columns
-    # Check sorted descending by Opportunity Gap
-    assert opps["Opportunity Gap (%)"].iloc[0] >= opps["Opportunity Gap (%)"].iloc[-1]
-
-
-def test_generate_template_csv():
-    from engine import generate_template_csv
-    import io
-    csv_str = generate_template_csv()
-    df = pd.read_csv(io.StringIO(csv_str))
-    assert all(col in df.columns for col in ["Temperature", "Pressure", "Power", "Defects", "Yield"])
-    assert len(df) == 5
+    from engine import batch_predict_lots
+    sample_lots = df.head(5)[trained["features"] + ["Lot"]]
+    results = batch_predict_lots(trained, sample_lots)
+    assert len(results) == 5
+    assert "Predicted_Yield" in results.columns
+    assert "Risk_Level" in results.columns
 
 
 if __name__ == "__main__":
@@ -133,9 +129,9 @@ if __name__ == "__main__":
         test_predict_risky_lot_flags_abnormal_params,
         test_predict_healthy_lot_is_low_risk,
         test_predict_missing_input_raises,
-        test_expanded_summary_metrics,
-        test_compute_lot_opportunities,
-        test_generate_template_csv,
+        test_compute_spc_limits,
+        test_generate_wafer_map,
+        test_batch_predict_lots,
     ]
     passed, failed = 0, 0
     for t in tests:

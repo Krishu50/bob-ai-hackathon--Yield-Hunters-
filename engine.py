@@ -61,26 +61,28 @@ def get_feature_columns(df: pd.DataFrame):
 
 def compute_summary(df: pd.DataFrame) -> dict:
     low_thresh = df["Yield"].quantile(LOW_YIELD_THRESHOLD_PERCENTILE)
-    avg_yield = df["Yield"].mean()
-    high_thresh = df["Yield"].quantile(0.75)
-    healthy_benchmark = df[df["Yield"] >= high_thresh]["Yield"].median() if (df["Yield"] >= high_thresh).any() else avg_yield
-    opportunity_gap = max(0.0, healthy_benchmark - avg_yield)
-    improvement_pct = (opportunity_gap / avg_yield * 100) if avg_yield > 0 else 0.0
+    mean_yield = float(df["Yield"].mean())
+    std_yield = float(df["Yield"].std()) if len(df) > 1 else 0.0
+    ucl_yield = min(100.0, mean_yield + 3.0 * std_yield)
+    lcl_yield = max(0.0, mean_yield - 3.0 * std_yield)
+    target_yield = 90.0
+    yield_pass_count = int((df["Yield"] >= target_yield).sum())
+    yield_pass_rate = round((yield_pass_count / len(df)) * 100.0, 1) if len(df) > 0 else 0.0
 
     return {
         "total_lots": len(df),
-        "average_yield": round(avg_yield, 2),
-        "median_yield": round(df["Yield"].median(), 2),
-        "best_yield": round(df["Yield"].max(), 2),
-        "best_lot": df.loc[df["Yield"].idxmax(), "Lot"] if "Lot" in df.columns else None,
+        "average_yield": round(mean_yield, 2),
         "low_yield_threshold": round(low_thresh, 2),
         "low_yield_lots": int((df["Yield"] <= low_thresh).sum()),
         "avg_defects": round(df["Defects"].mean(), 2),
         "worst_lot": df.loc[df["Yield"].idxmin(), "Lot"] if "Lot" in df.columns else None,
         "worst_yield": round(df["Yield"].min(), 2),
-        "healthy_benchmark": round(healthy_benchmark, 2),
-        "potential_opportunity": round(opportunity_gap, 2),
-        "improvement_pct": round(improvement_pct, 2),
+        "std_yield": round(std_yield, 2),
+        "ucl_yield": round(ucl_yield, 2),
+        "lcl_yield": round(lcl_yield, 2),
+        "target_yield": target_yield,
+        "yield_pass_rate": yield_pass_rate,
+        "best_yield": round(df["Yield"].max(), 2),
     }
 
 
@@ -182,6 +184,12 @@ def train_risk_model(df: pd.DataFrame):
     and risk-band thresholds derived from the historical distribution."""
     importance_df, model = compute_feature_importance(df)
     baseline = _baseline_stats(df)
+    features = get_feature_columns(df)
+
+    X = df[features]
+    y = df["Yield"]
+    r2 = round(float(model.score(X, y)), 3)
+    mae = round(float(np.mean(np.abs(model.predict(X) - y))), 2)
 
     yield_25 = df["Yield"].quantile(0.25)
     yield_50 = df["Yield"].quantile(0.50)
@@ -196,7 +204,10 @@ def train_risk_model(df: pd.DataFrame):
         "importance_df": importance_df,
         "baseline": baseline,
         "thresholds": thresholds,
-        "features": get_feature_columns(df),
+        "features": features,
+        "r2": r2,
+        "mae": mae,
+        "n_samples": len(df),
     }
 
 
@@ -233,6 +244,68 @@ def predict_new_lot(trained, input_values: dict):
     }
 
 
+def compute_spc_limits(series: pd.Series, n_sigma: float = 3.0) -> dict:
+    """Calculates Statistical Process Control limits (Center Line, UCL, LCL)."""
+    mean_val = float(series.mean())
+    std_val = float(series.std()) if len(series) > 1 else 0.0
+    return {
+        "mean": round(mean_val, 2),
+        "std": round(std_val, 2),
+        "ucl": round(mean_val + n_sigma * std_val, 2),
+        "lcl": round(max(0.0, mean_val - n_sigma * std_val), 2),
+    }
+
+
+def generate_wafer_map(lot_id: str, defect_count: int, yield_pct: float, radius: int = 8) -> pd.DataFrame:
+    """
+    Generates deterministic die coordinate grid and pass/fail statuses
+    for an authentic circular semiconductor wafer representation.
+    """
+    import hashlib
+    seed = int(hashlib.md5(str(lot_id).encode()).hexdigest()[:8], 16)
+    rng = np.random.RandomState(seed)
+
+    dies = []
+    for x in range(-radius, radius + 1):
+        for y in range(-radius, radius + 1):
+            dist = np.sqrt(x**2 + y**2)
+            if dist <= radius:
+                norm_dist = dist / radius
+                dies.append({"x": x, "y": y, "r": norm_dist})
+
+    df_dies = pd.DataFrame(dies)
+    total_dies = len(df_dies)
+
+    est_defects = int(round((1.0 - (yield_pct / 100.0)) * total_dies))
+    est_defects = max(int(defect_count > 0), min(total_dies, est_defects))
+
+    edge_bias = 0.5 + 0.5 * (df_dies["r"] ** 1.5)
+    weights = edge_bias / edge_bias.sum()
+    defect_indices = rng.choice(total_dies, size=min(est_defects, total_dies), replace=False, p=weights)
+
+    df_dies["status"] = "Pass"
+    df_dies.loc[defect_indices, "status"] = "Defect"
+    df_dies["lot_id"] = str(lot_id)
+    return df_dies
+
+
+def batch_predict_lots(trained: dict, df_lots: pd.DataFrame) -> pd.DataFrame:
+    """Evaluates a batch of planned lots against the trained model."""
+    results = []
+    for idx, row in df_lots.iterrows():
+        lot_id = row.get("Lot", f"SIM-{idx+1:03d}")
+        input_vals = {f: float(row[f]) for f in trained["features"] if f in row}
+        pred = predict_new_lot(trained, input_vals)
+        results.append({
+            "Lot": lot_id,
+            "Predicted_Yield": pred["predicted_yield"],
+            "Risk_Level": pred["risk"],
+            "Flagged_Factors": len(pred["findings"]),
+            "Top_Contributing_Factor": pred["findings"][0]["factor"] if pred["findings"] else "None",
+        })
+    return pd.DataFrame(results)
+
+
 def compute_lot_opportunities(df: pd.DataFrame, trained: dict) -> pd.DataFrame:
     """
     Ranks lots by yield recovery opportunity (lowest yield / highest deficit first).
@@ -257,7 +330,6 @@ def compute_lot_opportunities(df: pd.DataFrame, trained: dict) -> pd.DataFrame:
         y_val = float(row["Yield"])
         deficit = max(0.0, high_benchmark - y_val)
 
-        # Risk classification
         if y_val <= thresholds["high_risk_below"]:
             risk_cat = "High Risk"
         elif y_val <= thresholds["medium_risk_below"]:
@@ -265,7 +337,6 @@ def compute_lot_opportunities(df: pd.DataFrame, trained: dict) -> pd.DataFrame:
         else:
             risk_cat = "Optimal"
 
-        # Determine primary excursion factor
         max_z = 0.0
         primary_factor = "None (In Spec)"
         for f in features:
@@ -295,13 +366,12 @@ def compute_lot_opportunities(df: pd.DataFrame, trained: dict) -> pd.DataFrame:
         rows.append(rec)
 
     opp_df = pd.DataFrame(rows)
-    # Sort with highest opportunity gap (lowest yield) first
     opp_df = opp_df.sort_values("Opportunity Gap (%)", ascending=False).reset_index(drop=True)
     return opp_df
 
 
 def generate_template_csv() -> str:
-    """Returns a valid CSV template string matching Yield Hunter's expected schema."""
+    """Returns a valid CSV template string matching expected schema."""
     template_data = (
         "Lot,Temperature,Pressure,Power,GasFlow,Defects,Yield\n"
         "L001,452.1,2.18,804.5,120.2,2,98.4\n"

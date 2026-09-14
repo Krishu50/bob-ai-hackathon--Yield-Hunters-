@@ -1,17 +1,12 @@
 """
 app.py
-YIELD HUNTER — Intelligent Yield & Opportunity Analysis Platform
-Wafer Fab Process Root-Cause, Yield Optimization & Risk Prediction Dashboard
+Wafer Yield Intelligence Platform
+Enterprise Root-Cause Analysis & Risk Simulation System
 """
 
 from __future__ import annotations
-
-import io
-import time
-from typing import Dict, Any, List
-
-import numpy as np
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -19,691 +14,411 @@ import streamlit as st
 from engine import (
     load_and_validate,
     compute_summary,
-    compute_feature_importance,
     train_risk_model,
     predict_new_lot,
     get_feature_columns,
-    compute_lot_opportunities,
-    generate_template_csv,
-    REQUIRED_COLUMNS,
-    OPTIONAL_COLUMNS,
+    compute_spc_limits,
+    generate_wafer_map,
+    batch_predict_lots,
 )
 
-# -----------------------------------------------------------------------------
-# Page Configuration & Styling
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Page Configuration
+# ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Yield Hunter | Intelligent Yield & Opportunity Analysis",
-    page_icon="⚡",
+    page_title="Wafer Yield Intelligence Platform",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom Styling (Dark Navy Professional Analytics Theme)
-CUSTOM_CSS = """
-<style>
-    /* Base theme adjustments */
-    .stApp {
-        background-color: #0b0f19;
-        color: #f1f5f9;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+# ---------------------------------------------------------------------------
+# Enterprise Light Design System (CSS)
+# ---------------------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* Global Clean White Styling */
+    html, body, [class*="css"] {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #111827;
     }
     
-    /* Header card */
-    .yh-header-card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 1.5rem 2rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    /* Main container adjustments */
+    .block-container {
+        padding-top: 1.8rem;
+        padding-bottom: 2.5rem;
+        padding-left: 2.5rem;
+        padding-right: 2.5rem;
+        max-width: 1400px;
     }
-    .yh-header-title {
-        font-size: 2.1rem;
-        font-weight: 800;
-        letter-spacing: -0.03em;
-        color: #f8fafc;
+    
+    /* Top Header Banner */
+    .enterprise-header {
+        background: #ffffff;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 1.2rem;
+        margin-bottom: 1.8rem;
+    }
+    .enterprise-tag {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #0f62fe;
+        background: #edf5ff;
+        padding: 3px 8px;
+        border-radius: 4px;
+        display: inline-block;
+        margin-bottom: 0.4rem;
+    }
+    .enterprise-title {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #0f172a;
         margin: 0;
-        display: flex;
-        align-items: center;
-        gap: 0.6rem;
+        letter-spacing: -0.02em;
     }
-    .yh-header-subtitle {
-        font-size: 1.0rem;
-        color: #94a3b8;
-        margin-top: 0.35rem;
-        font-weight: 400;
+    .enterprise-subtitle {
+        font-size: 0.92rem;
+        color: #64748b;
+        margin-top: 0.25rem;
     }
 
-    /* KPI Cards */
-    .kpi-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
+    /* Professional KPI Card */
     .kpi-card {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 1.1rem 1.3rem;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-        transition: transform 0.15s ease, border-color 0.15s ease;
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1.1rem 1.25rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        margin-bottom: 1rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
     .kpi-card:hover {
-        transform: translateY(-2px);
-        border-color: #3b82f6;
+        border-color: #cbd5e1;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     }
     .kpi-label {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        color: #94a3b8;
+        color: #64748b;
+        margin-bottom: 0.35rem;
     }
     .kpi-value {
         font-size: 1.75rem;
         font-weight: 700;
-        color: #f8fafc;
-        margin-top: 0.25rem;
+        color: #0f172a;
+        line-height: 1.2;
     }
     .kpi-sub {
         font-size: 0.8rem;
-        margin-top: 0.3rem;
-        font-weight: 500;
+        color: #64748b;
+        margin-top: 0.35rem;
     }
-    .text-emerald { color: #10b981; }
-    .text-rose { color: #f43f5e; }
-    .text-amber { color: #f59e0b; }
-    .text-blue { color: #38bdf8; }
+    .kpi-sub-positive {
+        color: #059669;
+        font-weight: 600;
+    }
+    .kpi-sub-alert {
+        color: #dc2626;
+        font-weight: 600;
+    }
 
-    /* Surface Card container */
-    .surface-card {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 1.4rem;
+    /* Section Card */
+    .section-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+    .section-title {
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 0.35rem;
+    }
+    .section-desc {
+        font-size: 0.85rem;
+        color: #64748b;
+        margin-bottom: 1rem;
+    }
+
+    /* Status Badges */
+    .status-pill {
+        display: inline-block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 4px;
+    }
+    .pill-low {
+        background-color: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+    .pill-medium {
+        background-color: #fffbeb;
+        color: #92400e;
+        border: 1px solid #fde68a;
+    }
+    .pill-high {
+        background-color: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
+    .pill-neutral {
+        background-color: #f1f5f9;
+        color: #334155;
+        border: 1px solid #e2e8f0;
+    }
+
+    /* Simulation Output Box */
+    .sim-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-top: 1rem;
         margin-bottom: 1.5rem;
     }
-    .surface-title {
-        font-size: 1.15rem;
-        font-weight: 600;
-        color: #f8fafc;
-        margin-bottom: 0.8rem;
+    
+    /* Clean Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #f8fafc;
+        border-right: 1px solid #e2e8f0;
     }
-
-    /* Status badge pill */
-    .status-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.3rem 0.75rem;
-        border-radius: 9999px;
+    .sidebar-header {
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+        margin-bottom: 1rem;
+    }
+    .sidebar-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+    }
+    .sidebar-desc {
         font-size: 0.78rem;
+        color: #64748b;
+        margin-top: 0.2rem;
+    }
+    
+    /* Streamlit button and input refinements */
+    div.stButton > button {
+        border-radius: 6px;
         font-weight: 600;
+        letter-spacing: 0.02em;
     }
-    .pill-active {
-        background-color: rgba(16, 185, 129, 0.15);
-        color: #34d399;
-        border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-    .pill-waiting {
-        background-color: rgba(245, 158, 11, 0.15);
-        color: #fbbf24;
-        border: 1px solid rgba(245, 158, 11, 0.3);
-    }
-    .pill-info {
-        background-color: rgba(59, 130, 246, 0.15);
-        color: #60a5fa;
-        border: 1px solid rgba(59, 130, 246, 0.3);
-    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-    /* Buttons */
-    div.stButton > button:first-child {
-        border-radius: 8px;
-        font-weight: 600;
-    }
-</style>
-"""
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-
-
-# -----------------------------------------------------------------------------
-# Session State Initialization
-# -----------------------------------------------------------------------------
-def init_session_state() -> None:
-    defaults: Dict[str, Any] = {
-        "raw_df": None,
-        "dataset_name": None,
-        "is_demo": False,
-        "column_mapping": {},
-        "cleaned_df": None,
-        "summary": None,
-        "trained": None,
-        "opps_df": None,
-        "analysis_warnings": [],
-        "analysis_run": False,
-        "active_section": "Dashboard",
-        "uploader_key_counter": 0,
-    }
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
-
-
-init_session_state()
-
-
-# -----------------------------------------------------------------------------
-# Chart Styling Helper
-# -----------------------------------------------------------------------------
-def style_plot(fig: go.Figure, title: str | None = None, height: int = 420) -> go.Figure:
+# ---------------------------------------------------------------------------
+# Plotly Standard Clean White Theme Helper
+# ---------------------------------------------------------------------------
+def apply_clean_theme(fig: go.Figure, title: str = "", height: int = 380) -> go.Figure:
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="#1e293b",
-        plot_bgcolor="#0f172a",
-        height=height,
-        font=dict(family="Inter, -apple-system, sans-serif", color="#cbd5e1"),
         title=dict(
-            text=title or "",
-            font=dict(size=15, color="#f8fafc", family="Inter, -apple-system, sans-serif"),
+            text=f"<b>{title}</b>" if title else "",
+            font=dict(size=14, color="#1e293b", family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto"),
             x=0.01,
             y=0.96,
-        ) if title else None,
-        margin=dict(l=45, r=30, t=50 if title else 25, b=45),
-        xaxis=dict(gridcolor="#334155", zerolinecolor="#475569"),
-        yaxis=dict(gridcolor="#334155", zerolinecolor="#475569"),
-        legend=dict(
-            bgcolor="rgba(30, 41, 59, 0.8)",
-            bordercolor="#334155",
-            borderwidth=1,
         ),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto", size=12, color="#475569"),
+        margin=dict(l=45, r=25, t=45 if title else 20, b=40),
+        height=height,
+        hoverlabel=dict(
+            bgcolor="#ffffff",
+            font_size=12,
+            font_family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto",
+            font_color="#0f172a",
+            bordercolor="#cbd5e1",
+        ),
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="#f1f5f9",
+        gridwidth=1,
+        linecolor="#cbd5e1",
+        linewidth=1,
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="#f1f5f9",
+        gridwidth=1,
+        linecolor="#cbd5e1",
+        linewidth=1,
+        zeroline=False,
     )
     return fig
 
 
-# -----------------------------------------------------------------------------
-# Column Auto-Detection Heuristics
-# -----------------------------------------------------------------------------
-COLUMN_SYNONYMS = {
-    "Yield": ["yield", "yield%", "yield_pct", "yield_percentage", "lot_yield", "wafer_yield", "output_yield", "recovery"],
-    "Temperature": ["temperature", "temp", "temp_c", "temperature_c", "temp_deg", "furnace_temp", "chamber_temp"],
-    "Pressure": ["pressure", "press", "chamber_pressure", "pressure_torr", "press_bar", "vacuum_pressure"],
-    "Power": ["power", "rf_power", "heater_power", "watts", "rf_watts", "generator_power"],
-    "Defects": ["defects", "defect", "defect_count", "particles", "particle_count", "errors", "defect_density"],
-    "GasFlow": ["gasflow", "gas_flow", "flow", "gas_sccm", "sccm", "flow_rate"],
-    "Lot": ["lot", "lot_id", "wafer_lot", "batch", "batch_id", "id", "run_id"],
-}
+# ---------------------------------------------------------------------------
+# Sidebar: System Configuration & Data Source
+# ---------------------------------------------------------------------------
+st.sidebar.markdown(
+    """
+    <div class="sidebar-header">
+        <div class="enterprise-tag">FAB 12 NODE</div>
+        <h3 class="sidebar-title">Wafer Yield Platform</h3>
+        <p class="sidebar-desc">Process monitoring & lot excursion intelligence</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
+st.sidebar.markdown("### Data Source")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Lot Process CSV",
+    type=["csv"],
+    help="Upload a CSV with Temperature, Pressure, Power, Defects, Yield, and optional GasFlow columns.",
+)
 
-def guess_column_match(target_field: str, available_cols: List[str]) -> str:
-    """Best effort column mapping guess based on normalized name matching."""
-    norm_available = {c.lower().replace("_", "").replace(" ", "").replace("-", ""): c for c in available_cols}
+use_demo = st.sidebar.checkbox(
+    "Load standard demo dataset",
+    value=uploaded_file is None,
+    help="Loads synthetic 500-lot baseline dataset from wafer_data.csv",
+)
 
-    synonyms = COLUMN_SYNONYMS.get(target_field, [target_field.lower()])
-
-    # 1. Exact match among synonyms
-    for syn in synonyms:
-        norm_syn = syn.lower().replace("_", "").replace(" ", "").replace("-", "")
-        if norm_syn in norm_available:
-            return norm_available[norm_syn]
-
-    # 2. Substring match on normalized strings
-    for norm_c, orig_c in norm_available.items():
-        for syn in synonyms:
-            norm_syn = syn.lower().replace("_", "").replace(" ", "").replace("-", "")
-            if len(norm_syn) >= 3 and (norm_syn in norm_c or norm_c in norm_syn):
-                return orig_c
-
-    return "[Select Column]"
-
-
-# -----------------------------------------------------------------------------
-# Data Quality Assessment
-# -----------------------------------------------------------------------------
-def run_data_quality_audit(raw_df: pd.DataFrame, mapping: Dict[str, str]) -> Dict[str, Any]:
-    total_rows = len(raw_df)
-    total_cols = len(raw_df.columns)
-    dup_rows = int(raw_df.duplicated().sum())
-
-    missing_counts: Dict[str, int] = {}
-    invalid_num_counts: Dict[str, int] = {}
-    unmapped_required = []
-
-    for req in REQUIRED_COLUMNS:
-        col = mapping.get(req)
-        if not col or col == "[Select Column]" or col not in raw_df.columns:
-            unmapped_required.append(req)
-        else:
-            nans = int(raw_df[col].isna().sum())
-            missing_counts[req] = nans
-            coerced = pd.to_numeric(raw_df[col], errors="coerce")
-            invalid_num = int(coerced.isna().sum() - nans)
-            invalid_num_counts[req] = invalid_num
-
-    # Calculate valid rows count if required columns mapped
-    valid_rows = 0
-    if not unmapped_required:
-        subset_cols = [mapping[r] for r in REQUIRED_COLUMNS]
-        temp_df = raw_df[subset_cols].copy()
-        for c in temp_df.columns:
-            temp_df[c] = pd.to_numeric(temp_df[c], errors="coerce")
-        valid_rows = len(temp_df.dropna())
-
-    return {
-        "total_rows": total_rows,
-        "total_cols": total_cols,
-        "valid_rows": valid_rows,
-        "dup_rows": dup_rows,
-        "missing_counts": missing_counts,
-        "invalid_num_counts": invalid_num_counts,
-        "unmapped_required": unmapped_required,
-        "is_schema_ready": len(unmapped_required) == 0,
-    }
-
-
-# -----------------------------------------------------------------------------
-# Header Component
-# -----------------------------------------------------------------------------
-def render_header() -> None:
-    st.markdown(
-        """
-        <div class="yh-header-card">
-            <div class="yh-header-title">
-                <span>⚡ YIELD HUNTER</span>
-            </div>
-            <div class="yh-header-subtitle">
-                Intelligent Yield & Opportunity Analysis Platform — Precision Root Cause Diagnostics & Excursion Risk Engine
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# -----------------------------------------------------------------------------
-# Sidebar Component
-# -----------------------------------------------------------------------------
-def render_sidebar() -> str:
-    with st.sidebar:
-        st.markdown("### ⚡ **YIELD HUNTER**")
-        st.caption("Semiconductor Process Analytics & Yield Optimization")
-        st.markdown("---")
-
-        # Dataset Status Widget
-        st.markdown("**Dataset Status**")
-        if st.session_state["raw_df"] is not None:
-            dataset_name = st.session_state["dataset_name"]
-            row_count = len(st.session_state["raw_df"])
-            status_text = "Analysis Ready" if st.session_state["analysis_run"] else "Dataset Loaded"
-            pill_class = "pill-active" if st.session_state["analysis_run"] else "pill-info"
-
-            st.markdown(
-                f"""
-                <div style="background:#1e293b; border:1px solid #334155; border-radius:8px; padding:0.8rem; margin-bottom:1rem;">
-                    <div style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase; font-weight:600;">Active Dataset</div>
-                    <div style="font-size:0.95rem; font-weight:700; color:#f8fafc; margin-top:0.2rem; word-break:break-all;">{dataset_name}</div>
-                    <div style="margin-top:0.5rem; display:flex; justify-content:space-between; align-items:center;">
-                        <span class="status-pill {pill_class}">● {status_text}</span>
-                        <span style="font-size:0.8rem; color:#94a3b8;">{row_count:,} rows</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                """
-                <div style="background:#1e293b; border:1px solid #334155; border-radius:8px; padding:0.8rem; margin-bottom:1rem;">
-                    <div style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase; font-weight:600;">Active Dataset</div>
-                    <div style="font-size:0.95rem; font-weight:600; color:#94a3b8; margin-top:0.2rem;">No data loaded</div>
-                    <div style="margin-top:0.5rem;">
-                        <span class="status-pill pill-waiting">Waiting for CSV</span>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # Navigation
-        st.markdown("**Navigation**")
-        nav_options = [
-            "Dashboard",
-            "Data Input",
-            "Analysis",
-            "Results",
-            "Future Lot Prediction",
-            "About",
-        ]
-        icons = {
-            "Dashboard": "🏠",
-            "Data Input": "📥",
-            "Analysis": "📊",
-            "Results": "🎯",
-            "Future Lot Prediction": "⚠️",
-            "About": "ℹ️",
-        }
-        selected = st.radio(
-            "Select View",
-            nav_options,
-            format_func=lambda x: f"{icons[x]} {x}",
-            index=nav_options.index(st.session_state["active_section"]),
-            label_visibility="collapsed",
-        )
-        st.session_state["active_section"] = selected
-
-        st.markdown("---")
-
-        # Quick Actions in Sidebar
-        if st.session_state["raw_df"] is not None:
-            if st.button("🔄 Reset / Clear Dataset", use_container_width=True):
-                st.session_state["raw_df"] = None
-                st.session_state["dataset_name"] = None
-                st.session_state["is_demo"] = False
-                st.session_state["column_mapping"] = {}
-                st.session_state["cleaned_df"] = None
-                st.session_state["summary"] = None
-                st.session_state["trained"] = None
-                st.session_state["opps_df"] = None
-                st.session_state["analysis_warnings"] = []
-                st.session_state["analysis_run"] = False
-                st.session_state["uploader_key_counter"] += 1
-                st.rerun()
-
-        st.caption("Yield Hunter v2.0 • Production Analytics Edition")
-        st.caption("IBM Bob AI Innovation Hackathon")
-
-    return selected
-
-
-# -----------------------------------------------------------------------------
-# Section: Data Input & Quality
-# -----------------------------------------------------------------------------
-def render_data_input() -> None:
-    st.markdown("### 📥 Data Input & Schema Configuration")
-    st.caption("Upload your semiconductor fabrication wafer-lot CSV dataset, or load the verified demo dataset.")
-
-    # Top Action Buttons: Demo Data & Template Download
-    col_a, col_b, col_c = st.columns([1.5, 1.5, 3])
-    with col_a:
-        if st.button("🔬 Try Demo Dataset", use_container_width=True, type="secondary"):
-            try:
-                demo_df = pd.read_csv("wafer_data.csv")
-                st.session_state["raw_df"] = demo_df
-                st.session_state["dataset_name"] = "wafer_data.csv (Demo Dataset)"
-                st.session_state["is_demo"] = True
-                # Reset analysis run so user executes with button
-                st.session_state["analysis_run"] = False
-                # Auto map standard columns
-                mapping = {col: col for col in REQUIRED_COLUMNS + OPTIONAL_COLUMNS if col in demo_df.columns}
-                if "Lot" in demo_df.columns:
-                    mapping["Lot"] = "Lot"
-                st.session_state["column_mapping"] = mapping
-                st.success("Loaded verified Demo Dataset (500 wafer lots). Ready for analysis!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error loading demo dataset: {str(e)}")
-
-    with col_b:
-        template_csv = generate_template_csv()
-        st.download_button(
-            label="📄 Download CSV Template",
-            data=template_csv,
-            file_name="yield_hunter_template.csv",
-            mime="text/csv",
-            use_container_width=True,
-            help="Download a properly formatted wafer lot CSV template with sample data.",
-        )
-
-    # Real Functional CSV Uploader
-    st.markdown("#### 📁 Upload Wafer Lot CSV")
-    uploaded_file = st.file_uploader(
-        "Select a .csv file from your computer",
-        type=["csv"],
-        key=f"csv_uploader_{st.session_state['uploader_key_counter']}",
-        help="Upload CSV containing process parameters (Temperature, Pressure, Power, Defects, Yield)",
-    )
-
-    if uploaded_file is not None:
-        try:
-            # Read CSV with pandas safely
-            raw_csv_df = pd.read_csv(uploaded_file)
-            if raw_csv_df.empty:
-                st.error("The uploaded CSV file is empty. Please upload a CSV containing data rows.")
-            else:
-                st.session_state["raw_df"] = raw_csv_df
-                st.session_state["dataset_name"] = uploaded_file.name
-                st.session_state["is_demo"] = False
-                st.session_state["analysis_run"] = False
-                st.success(f"Your CSV was uploaded successfully: **{uploaded_file.name}** ({len(raw_csv_df):,} rows, {len(raw_csv_df.columns)} columns)")
-        except Exception as e:
-            st.error(f"Failed to parse CSV file: {str(e)}. Please check that the file is a valid, uncorrupted CSV.")
-
-    raw_df = st.session_state.get("raw_df")
-
-    if raw_df is None:
-        st.info("👈 Please upload a CSV file above or click **'🔬 Try Demo Dataset'** to begin.")
-        return
-
-    # Dataset Metadata Banner
-    st.markdown("---")
-    badge_label = "Demo Dataset" if st.session_state["is_demo"] else "User Uploaded CSV"
-    st.markdown(
-        f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:0.75rem 1.2rem; margin-bottom:1rem;">
-            <div>
-                <span style="font-weight:700; color:#f8fafc; font-size:1.05rem;">{st.session_state['dataset_name']}</span>
-                <span style="margin-left:0.6rem; font-size:0.75rem; background:#334155; color:#38bdf8; padding:0.2rem 0.6rem; border-radius:4px; font-weight:600;">{badge_label}</span>
-            </div>
-            <div style="font-size:0.85rem; color:#94a3b8;">
-                <strong>{len(raw_df):,}</strong> Total Rows &nbsp;|&nbsp; <strong>{len(raw_df.columns)}</strong> Columns
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Data Preview
-    st.markdown("#### 👁️ Data Preview (First 10 Rows)")
-    st.dataframe(raw_df.head(10), use_container_width=True)
-
-    # Column Mapping Section
-    st.markdown("---")
-    st.markdown("#### 🗺️ Column Mapping")
-    st.caption("Map your dataset's columns to the standard fields required by the Yield Hunter analytics engine.")
-
-    available_cols = ["[Select Column]"] + list(raw_df.columns)
-    mapping = dict(st.session_state.get("column_mapping", {}))
-
-    # Render mapping inputs in clean 3-column layout
-    col1, col2, col3 = st.columns(3)
-    target_fields = [
-        ("Yield", "Target Yield (%)", True),
-        ("Defects", "Defect / Particle Count", True),
-        ("Temperature", "Process Temperature", True),
-        ("Pressure", "Chamber Pressure", True),
-        ("Power", "RF / Process Power", True),
-        ("GasFlow", "Gas Flow Rate (sccm)", False),
-        ("Lot", "Lot / Batch Identifier", False),
-    ]
-
-    for idx, (target, label_desc, is_required) in enumerate(target_fields):
-        target_col = [col1, col2, col3][idx % 3]
-        with target_col:
-            # Determine initial selection
-            current_choice = mapping.get(target)
-            if not current_choice or current_choice not in available_cols:
-                current_choice = guess_column_match(target, list(raw_df.columns))
-
-            default_idx = available_cols.index(current_choice) if current_choice in available_cols else 0
-            req_tag = "🔴 Required" if is_required else "⚪ Optional"
-
-            selected_col = st.selectbox(
-                f"**{target}** ({req_tag})",
-                available_cols,
-                index=default_idx,
-                help=f"{label_desc}. Required by algorithm." if is_required else f"{label_desc}.",
-                key=f"map_select_{target}",
-            )
-            mapping[target] = selected_col
-
-    st.session_state["column_mapping"] = mapping
-
-    # Check Required Mapping Status
-    unmapped = [r for r in REQUIRED_COLUMNS if mapping.get(r) in (None, "[Select Column]")]
-    if unmapped:
-        st.warning(f"⚠️ Your CSV is missing required column mapping(s): **{', '.join(unmapped)}**. Please select the matching columns above.")
-    else:
-        st.success("✅ All required columns are mapped and ready for analysis.")
-
-    # Data Quality Expandable Section (Requirement 10)
-    audit = run_data_quality_audit(raw_df, mapping)
-    with st.expander("🔍 Data Quality Audit & Schema Inspection", expanded=True):
-        q1, q2, q3, q4, q5 = st.columns(5)
-        q1.metric("Total Records", f"{audit['total_rows']:,}")
-        q2.metric("Valid Clean Rows", f"{audit['valid_rows']:,}")
-        q3.metric("Duplicate Rows", f"{audit['dup_rows']:,}")
-        total_miss = sum(audit["missing_counts"].values())
-        q4.metric("Missing Values", f"{total_miss:,}")
-        total_inv = sum(audit["invalid_num_counts"].values())
-        q5.metric("Invalid Numeric", f"{total_inv:,}")
-
-        st.markdown("##### Required Columns Status")
-        status_cols = st.columns(len(REQUIRED_COLUMNS))
-        for i, req in enumerate(REQUIRED_COLUMNS):
-            with status_cols[i]:
-                src = mapping.get(req)
-                if src and src != "[Select Column]":
-                    miss = audit["missing_counts"].get(req, 0)
-                    inv = audit["invalid_num_counts"].get(req, 0)
-                    if miss == 0 and inv == 0:
-                        st.markdown(f"**{req}**\n\n🟢 Valid (`{src}`)")
-                    else:
-                        st.markdown(f"**{req}**\n\n🟡 `{src}` ({miss} null, {inv} bad)")
-                else:
-                    st.markdown(f"**{req}**\n\n🔴 Not Mapped")
-
-    # Analysis Trigger Button (Requirement 5)
-    st.markdown("---")
-    col_run, _ = st.columns([2, 3])
-    with col_run:
-        can_run = len(unmapped) == 0
-        btn_label = "🚀 Run Yield Analysis" if can_run else "⚠️ Map Required Columns to Run"
-        if st.button(btn_label, type="primary", use_container_width=True, disabled=not can_run):
-            run_yield_analysis(raw_df, mapping)
-
-
-# -----------------------------------------------------------------------------
-# Analysis Execution Pipeline
-# -----------------------------------------------------------------------------
-def run_yield_analysis(raw_df: pd.DataFrame, mapping: Dict[str, str]) -> None:
+if uploaded_file is not None and not use_demo:
     try:
-        with st.spinner("Analyzing your dataset... Fitting ensemble models and diagnosing excursions..."):
-            # Build transformed dataframe matching standard names
-            mapped_data = {}
-            for target in REQUIRED_COLUMNS + OPTIONAL_COLUMNS:
-                src_col = mapping.get(target)
-                if src_col and src_col != "[Select Column]" and src_col in raw_df.columns:
-                    mapped_data[target] = raw_df[src_col]
+        raw_df = pd.read_csv(uploaded_file)
+    except Exception as err:
+        st.sidebar.error(f"Error reading uploaded CSV: {err}")
+        st.stop()
+elif use_demo:
+    try:
+        raw_df = pd.read_csv("wafer_data.csv")
+    except Exception as err:
+        st.sidebar.error(f"Error reading wafer_data.csv: {err}")
+        st.stop()
+else:
+    st.info("Please upload a CSV file or check 'Load standard demo dataset' in the sidebar.")
+    st.stop()
 
-            if mapping.get("Lot") and mapping.get("Lot") != "[Select Column]" and mapping.get("Lot") in raw_df.columns:
-                mapped_data["Lot"] = raw_df[mapping["Lot"]]
+df, warnings = load_and_validate(raw_df)
+for w in warnings:
+    st.sidebar.warning(w)
 
-            working_df = pd.DataFrame(mapped_data)
+if df.empty:
+    st.error("No valid numeric records remained after validation. Please check file format.")
+    st.stop()
 
-            # Clean and validate using existing engine logic
-            cleaned_df, warnings = load_and_validate(working_df)
+# Model training cached per dataset
+@st.cache_resource(show_spinner="Training predictive ensemble model...")
+def get_trained_model(data: pd.DataFrame):
+    return train_risk_model(data)
 
-            if cleaned_df.empty:
-                st.error("No valid numeric rows found after data cleaning. Please verify your data columns.")
-                return
+trained = get_trained_model(df)
+summary = compute_summary(df)
 
-            # Train model using existing engine logic
-            trained = train_risk_model(cleaned_df)
+# Sidebar System Metadata
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Navigation")
+page = st.sidebar.radio(
+    "Module Selection",
+    [
+        "Overview Dashboard",
+        "Yield & Defect Analytics",
+        "Root Cause Analysis",
+        "Lot Risk Simulator",
+    ],
+    label_visibility="collapsed",
+)
 
-            # Compute summary KPIs using existing engine logic
-            summary = compute_summary(cleaned_df)
+st.sidebar.markdown("---")
+st.sidebar.markdown("### System Specs")
+st.sidebar.markdown(
+    f"""
+    <div style="font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+        <div><b>Dataset Size:</b> {summary['total_lots']} lots</div>
+        <div><b>Model Type:</b> Random Forest Regressor</div>
+        <div><b>Model Fit (R²):</b> {trained.get('r2', 'N/A')}</div>
+        <div><b>Mean Error:</b> {trained.get('mae', 'N/A')}% yield</div>
+        <div><b>Status:</b> Operational</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-            # Compute lot opportunities & excursions
-            opps_df = compute_lot_opportunities(cleaned_df, trained)
+# Download clean sample CSV template
+st.sidebar.markdown("---")
+sample_csv = df.head(5).to_csv(index=False)
+st.sidebar.download_button(
+    label="Download Sample CSV Template",
+    data=sample_csv,
+    file_name="sample_wafer_lots.csv",
+    mime="text/csv",
+)
 
-            # Store in session state
-            st.session_state["cleaned_df"] = cleaned_df
-            st.session_state["trained"] = trained
-            st.session_state["summary"] = summary
-            st.session_state["opps_df"] = opps_df
-            st.session_state["analysis_warnings"] = warnings
-            st.session_state["analysis_run"] = True
+# ---------------------------------------------------------------------------
+# Global Header
+# ---------------------------------------------------------------------------
+st.markdown(
+    """
+    <div class="enterprise-header">
+        <div class="enterprise-tag">SEMICONDUCTOR MANUFACTURING INTELLIGENCE</div>
+        <h1 class="enterprise-title">Wafer Lot Yield Platform</h1>
+        <div class="enterprise-subtitle">Statistical process monitoring, automated root-cause attribution, and planned lot risk simulation</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-            st.success("Analysis completed successfully! Proceeding to Dashboard...")
-            time.sleep(0.5)
-            st.session_state["active_section"] = "Dashboard"
-            st.rerun()
-
-    except Exception as e:
-        st.error(f"Analysis encountered an issue: {str(e)}. Please check your dataset values and column mappings.")
-
-
-# -----------------------------------------------------------------------------
-# Section: Dashboard (Executive Overview)
-# -----------------------------------------------------------------------------
-def render_dashboard() -> None:
-    if not st.session_state.get("analysis_run") or st.session_state.get("summary") is None:
-        st.info("👈 No analysis results available yet. Navigate to **'Data Input'** and click **'🚀 Run Yield Analysis'** to generate your dashboard.")
-        col1, _ = st.columns([2, 4])
-        with col1:
-            if st.button("Go to Data Input", type="primary"):
-                st.session_state["active_section"] = "Data Input"
-                st.rerun()
-        return
-
-    summary = st.session_state["summary"]
-    df = st.session_state["cleaned_df"]
-    trained = st.session_state["trained"]
-    opps_df = st.session_state["opps_df"]
-
-    st.markdown("### 🏠 Executive Dashboard")
-    st.caption(f"Comprehensive yield performance summary for dataset **{st.session_state['dataset_name']}**")
-
-    # Show data cleaning warnings if any
-    for w in st.session_state.get("analysis_warnings", []):
-        st.warning(f"ℹ️ {w}")
-
-    # Executive KPI Metric Cards (Requirement 7)
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
+# ---------------------------------------------------------------------------
+# MODULE 1: Overview Dashboard
+# ---------------------------------------------------------------------------
+if page == "Overview Dashboard":
+    # Top KPI Metrics Row
+    k1, k2, k3, k4, k5 = st.columns(5)
+    
+    yield_delta = summary["average_yield"] - summary["target_yield"]
+    delta_class = "kpi-sub-positive" if yield_delta >= 0 else "kpi-sub-alert"
+    delta_prefix = "+" if yield_delta >= 0 else ""
 
     with k1:
         st.markdown(
             f"""
             <div class="kpi-card">
-                <div class="kpi-label">Total Records</div>
-                <div class="kpi-value text-blue">{summary['total_lots']:,}</div>
-                <div class="kpi-sub" style="color:#94a3b8;">Wafer lots audited</div>
+                <div class="kpi-label">Total Monitored Lots</div>
+                <div class="kpi-value">{summary['total_lots']}</div>
+                <div class="kpi-sub">Historical production runs</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     with k2:
-        avg_color = "text-emerald" if summary['average_yield'] >= 90 else ("text-amber" if summary['average_yield'] >= 80 else "text-rose")
         st.markdown(
             f"""
             <div class="kpi-card">
                 <div class="kpi-label">Average Yield</div>
-                <div class="kpi-value {avg_color}">{summary['average_yield']:.2f}%</div>
-                <div class="kpi-sub" style="color:#94a3b8;">Median: {summary['median_yield']:.2f}%</div>
+                <div class="kpi-value">{summary['average_yield']}%</div>
+                <div class="kpi-sub <span class='{delta_class}'>{delta_prefix}{yield_delta:.1f}% vs 90.0% Target</span></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
     with k3:
+        excursion_rate = round((summary["low_yield_lots"] / summary["total_lots"]) * 100, 1)
         st.markdown(
             f"""
             <div class="kpi-card">
-                <div class="kpi-label">Best Yield</div>
-                <div class="kpi-value text-emerald">{summary['best_yield']:.2f}%</div>
-                <div class="kpi-sub text-emerald">Lot: {summary['best_lot']}</div>
+                <div class="kpi-label">Low-Yield Excursions</div>
+                <div class="kpi-value">{summary['low_yield_lots']}</div>
+                <div class="kpi-sub"><span class="kpi-sub-alert">{excursion_rate}% of runs (≤ {summary['low_yield_threshold']}%)</span></div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -713,9 +428,9 @@ def render_dashboard() -> None:
         st.markdown(
             f"""
             <div class="kpi-card">
-                <div class="kpi-label">Opportunity Gap</div>
-                <div class="kpi-value text-amber">+{summary['potential_opportunity']:.2f}%</div>
-                <div class="kpi-sub text-amber">Potential: +{summary['improvement_pct']:.1f}% gain</div>
+                <div class="kpi-label">Mean Defect Count</div>
+                <div class="kpi-value">{summary['avg_defects']}</div>
+                <div class="kpi-sub">Classified dies per wafer</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -725,390 +440,635 @@ def render_dashboard() -> None:
         st.markdown(
             f"""
             <div class="kpi-card">
-                <div class="kpi-label">Low-Yield Excursions</div>
-                <div class="kpi-value text-rose">{summary['low_yield_lots']}</div>
-                <div class="kpi-sub text-rose">&le; {summary['low_yield_threshold']:.2f}% (P25)</div>
+                <div class="kpi-label">Yield Range (Min / Max)</div>
+                <div class="kpi-value">{summary['worst_yield']}% / {summary.get('best_yield', 99.0)}%</div>
+                <div class="kpi-sub">Critical lot: {summary['worst_lot']}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    with k6:
+    # Main Visual Analytics (Yield Distribution + Interactive Wafer Die Map)
+    col_dist, col_wafer = st.columns([1.1, 1.0])
+
+    with col_dist:
         st.markdown(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Avg Defects</div>
-                <div class="kpi-value" style="color:#e2e8f0;">{summary['avg_defects']:.1f}</div>
-                <div class="kpi-sub" style="color:#94a3b8;">Worst Lot: {summary['worst_lot']}</div>
+            """
+            <div class="section-card">
+                <div class="section-title">Yield Distribution & Specification Limits</div>
+                <div class="section-desc">Historical yield distribution relative to lower quartile threshold and mean specification target.</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Top Visualizations Row: Distribution + Root Cause preview
-    c_left, c_right = st.columns([3, 2])
-
-    with c_left:
         fig_dist = px.histogram(
             df,
             x="Yield",
             nbins=35,
-            marginal="box",
-            title="Yield Distribution Across Wafer Lots",
-            color_discrete_sequence=["#38bdf8"],
+            color_discrete_sequence=["#0f62fe"],
+            opacity=0.85,
         )
+        # Add Low-Yield Threshold vertical line
         fig_dist.add_vline(
             x=summary["low_yield_threshold"],
             line_dash="dash",
-            line_color="#ef4444",
-            annotation_text=f"Excursion Threshold ({summary['low_yield_threshold']}%)",
+            line_color="#da1e28",
+            line_width=1.5,
+            annotation_text=f"25th Pct Threshold ({summary['low_yield_threshold']}%)",
             annotation_position="top left",
+            annotation_font=dict(size=10, color="#da1e28"),
         )
+        # Add Mean Yield line
         fig_dist.add_vline(
             x=summary["average_yield"],
             line_dash="dot",
-            line_color="#10b981",
+            line_color="#007d79",
+            line_width=1.5,
             annotation_text=f"Mean ({summary['average_yield']}%)",
             annotation_position="top right",
+            annotation_font=dict(size=10, color="#007d79"),
         )
-        style_plot(fig_dist, "Yield Distribution & Excursion Boundary", height=380)
+        fig_dist.update_layout(xaxis_title="Yield Percentage (%)", yaxis_title="Lot Count")
+        fig_dist = apply_clean_theme(fig_dist, height=360)
         st.plotly_chart(fig_dist, use_container_width=True)
 
-    with c_right:
-        imp_df = trained["importance_df"]
+    with col_wafer:
+        st.markdown(
+            """
+            <div class="section-card">
+                <div class="section-title">Spatial Wafer Die Map Inspection</div>
+                <div class="section-desc">Physical 300mm wafer die topology simulation for selected lot, showing edge vs center defect concentration.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Lot selector for wafer map
+        lot_options = df["Lot"].tolist() if "Lot" in df.columns else [f"Lot-{i+1}" for i in range(len(df))]
+        default_idx = lot_options.index(summary["worst_lot"]) if summary["worst_lot"] in lot_options else 0
+        selected_lot = st.selectbox("Select Lot for Spatial Die Map", lot_options, index=default_idx)
+
+        selected_row = df[df["Lot"] == selected_lot].iloc[0] if "Lot" in df.columns else df.iloc[0]
+        wafer_data = generate_wafer_map(
+            selected_lot,
+            defect_count=int(selected_row["Defects"]),
+            yield_pct=float(selected_row["Yield"]),
+        )
+
+        pass_count = int((wafer_data["status"] == "Pass").sum())
+        defect_count_dies = int((wafer_data["status"] == "Defect").sum())
+        die_yield = round((pass_count / len(wafer_data)) * 100, 1)
+
+        fig_wafer = px.scatter(
+            wafer_data,
+            x="x",
+            y="y",
+            color="status",
+            color_discrete_map={"Pass": "#10b981", "Defect": "#ef4444"},
+            hover_data={"x": True, "y": True, "status": True, "r": ":.2f"},
+        )
+        fig_wafer.update_traces(marker=dict(size=11, symbol="square", opacity=0.9))
+        
+        # Add circular wafer outline boundary
+        fig_wafer.add_shape(
+            type="circle",
+            xref="x",
+            yref="y",
+            x0=-8.3,
+            y0=-8.3,
+            x1=8.3,
+            y1=8.3,
+            line=dict(color="#94a3b8", width=1.5, dash="solid"),
+        )
+        fig_wafer.update_layout(
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-9.5, 9.5]),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-9.5, 9.5], scaleanchor="x", scaleratio=1),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=""),
+        )
+        fig_wafer = apply_clean_theme(fig_wafer, height=310)
+        st.plotly_chart(fig_wafer, use_container_width=True)
+
+        st.markdown(
+            f"""
+            <div style="display: flex; gap: 1rem; font-size: 0.8rem; color: #475569; background: #f8fafc; padding: 6px 12px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                <div><b>Lot:</b> {selected_lot}</div>
+                <div><b>Reported Yield:</b> {selected_row['Yield']}%</div>
+                <div><b>Good Dies:</b> {pass_count} / {len(wafer_data)}</div>
+                <div><b>Defective Dies:</b> {defect_count_dies}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Recent Lots Log Table
+    st.markdown(
+        """
+        <div class="section-card" style="margin-top: 1.5rem;">
+            <div class="section-title">Production Lot Execution Records</div>
+            <div class="section-desc">Tabular process sensor logs and yield outputs with automated classification tags.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_filter1, col_filter2, col_filter3 = st.columns([1, 1, 2])
+    with col_filter1:
+        status_filter = st.selectbox("Filter by Yield Status", ["All Records", "Normal Yield (> 25th Pct)", "Excursion Lots (≤ 25th Pct)"])
+    with col_filter2:
+        lot_sort = st.selectbox("Sort Order", ["Latest Run First", "Lowest Yield First", "Highest Defect First"])
+
+    filtered_df = df.copy()
+    if status_filter == "Normal Yield (> 25th Pct)":
+        filtered_df = filtered_df[filtered_df["Yield"] > summary["low_yield_threshold"]]
+    elif status_filter == "Excursion Lots (≤ 25th Pct)":
+        filtered_df = filtered_df[filtered_df["Yield"] <= summary["low_yield_threshold"]]
+
+    if lot_sort == "Lowest Yield First":
+        filtered_df = filtered_df.sort_values("Yield", ascending=True)
+    elif lot_sort == "Highest Defect First":
+        filtered_df = filtered_df.sort_values("Defects", ascending=False)
+    else:
+        if "Lot" in filtered_df.columns:
+            filtered_df = filtered_df.sort_values("Lot", ascending=False)
+
+    st.dataframe(
+        filtered_df.head(25),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+# ---------------------------------------------------------------------------
+# MODULE 2: Yield & Defect Analytics
+# ---------------------------------------------------------------------------
+elif page == "Yield & Defect Analytics":
+    st.markdown(
+        """
+        <div class="section-card">
+            <div class="section-title">Statistical Process Control (SPC) Run Chart</div>
+            <div class="section-desc">Run-sequence chart with 3-Sigma upper and lower control limits (UCL / LCL) and 10-lot rolling mean trendline.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    spc = compute_spc_limits(df["Yield"])
+    df_sorted = df.sort_values("Lot") if "Lot" in df.columns else df.copy()
+    df_sorted["Rolling_Mean"] = df_sorted["Yield"].rolling(window=10, min_periods=1).mean().round(2)
+
+    fig_spc = go.Figure()
+
+    # Yield points
+    fig_spc.add_trace(
+        go.Scatter(
+            x=df_sorted["Lot"],
+            y=df_sorted["Yield"],
+            mode="lines+markers",
+            name="Lot Yield",
+            line=dict(color="#0f62fe", width=1.5),
+            marker=dict(size=4, color="#0f62fe"),
+        )
+    )
+
+    # 10-Lot Rolling Mean
+    fig_spc.add_trace(
+        go.Scatter(
+            x=df_sorted["Lot"],
+            y=df_sorted["Rolling_Mean"],
+            mode="lines",
+            name="10-Lot Rolling Mean",
+            line=dict(color="#0284c7", width=2.2, dash="dash"),
+        )
+    )
+
+    # Center Line (Mean)
+    fig_spc.add_hline(
+        y=spc["mean"],
+        line=dict(color="#059669", width=1.5, dash="dot"),
+        annotation_text=f"Center Line: {spc['mean']}%",
+        annotation_position="bottom right",
+        annotation_font=dict(size=10, color="#059669"),
+    )
+
+    # Lower Control Limit (LCL = Mean - 3 Sigma)
+    fig_spc.add_hline(
+        y=spc["lcl"],
+        line=dict(color="#dc2626", width=1.5, dash="dash"),
+        annotation_text=f"LCL (Mean - 3σ): {spc['lcl']}%",
+        annotation_position="bottom right",
+        annotation_font=dict(size=10, color="#dc2626"),
+    )
+
+    # Upper Control Limit (UCL = Min(100, Mean + 3 Sigma))
+    fig_spc.add_hline(
+        y=spc["ucl"],
+        line=dict(color="#64748b", width=1, dash="dash"),
+        annotation_text=f"UCL: {spc['ucl']}%",
+        annotation_position="top right",
+        annotation_font=dict(size=10, color="#64748b"),
+    )
+
+    fig_spc.update_layout(
+        xaxis_title="Production Lot Identifier",
+        yaxis_title="Yield Percentage (%)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    fig_spc = apply_clean_theme(fig_spc, height=400)
+    st.plotly_chart(fig_spc, use_container_width=True)
+
+    # Parameter vs Yield Scatter Correlations
+    st.markdown(
+        """
+        <div class="section-card" style="margin-top: 1.5rem;">
+            <div class="section-title">Process Parameter vs Yield Response</div>
+            <div class="section-desc">Bivariate relationship between chamber physical parameters, defect formation, and resulting yield.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    features = get_feature_columns(df)
+    param_cols = st.columns(2)
+    for i, feat in enumerate(features):
+        with param_cols[i % 2]:
+            fig_p = px.scatter(
+                df,
+                x=feat,
+                y="Yield",
+                color="Defects",
+                color_continuous_scale="Blues",
+                trendline="ols",
+                trendline_color_override="#dc2626",
+                hover_data=["Lot", feat, "Defects", "Yield"] if "Lot" in df.columns else [feat, "Defects", "Yield"],
+            )
+            fig_p = apply_clean_theme(fig_p, title=f"{feat} vs Yield", height=320)
+            st.plotly_chart(fig_p, use_container_width=True)
+
+    # Correlation Matrix Section
+    st.markdown(
+        """
+        <div class="section-card" style="margin-top: 1.5rem;">
+            <div class="section-title">Parameter Cross-Correlation Heatmap</div>
+            <div class="section-desc">Pearson correlation coefficients quantifying pairwise relationships across process settings and defect metrics.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    corr_cols = features + ["Yield"]
+    corr = df[corr_cols].corr().round(2)
+
+    fig_corr = px.imshow(
+        corr,
+        text_auto=True,
+        color_continuous_scale="RdBu_r",
+        zmin=-1.0,
+        zmax=1.0,
+        aspect="auto",
+    )
+    fig_corr = apply_clean_theme(fig_corr, height=380)
+    st.plotly_chart(fig_corr, use_container_width=True)
+
+# ---------------------------------------------------------------------------
+# MODULE 3: Root Cause Analysis
+# ---------------------------------------------------------------------------
+elif page == "Root Cause Analysis":
+    st.markdown(
+        """
+        <div class="section-card">
+            <div class="section-title">Ranked Factor Contribution (Feature Importance)</div>
+            <div class="section-desc">Random Forest feature importance ranking quantifying each parameter's statistical association with lot yield variance. Note: Highlights statistical associations rather than validated physical causality.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    imp_df = trained["importance_df"]
+
+    col_imp_chart, col_imp_stats = st.columns([1.3, 1.0])
+
+    with col_imp_chart:
         fig_imp = px.bar(
             imp_df,
             x="Importance",
             y="Factor",
             orientation="h",
             text=imp_df["Importance"].round(1).astype(str) + "%",
-            title="Top Factors Influencing Yield Variation",
             color="Importance",
-            color_continuous_scale="Tealgrn",
+            color_continuous_scale=["#cbd5e1", "#0f62fe"],
         )
-        fig_imp.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
         fig_imp.update_traces(textposition="outside")
-        style_plot(fig_imp, "Root Cause Attribution (Feature Importance)", height=380)
+        fig_imp.update_layout(
+            coloraxis_showscale=False,
+            xaxis_title="Relative Importance (%)",
+            yaxis_title="",
+            yaxis=dict(autorange="reversed"),
+        )
+        fig_imp = apply_clean_theme(fig_imp, height=300)
         st.plotly_chart(fig_imp, use_container_width=True)
 
-    # Top Opportunities Preview Table
-    st.markdown("---")
-    col_t1, col_t2 = st.columns([3, 1])
-    with col_t1:
-        st.markdown("#### 🎯 Priority Yield Recovery Opportunities (Top 5 Lots)")
-    with col_t2:
-        if st.button("View Full Opportunities Table ➔", use_container_width=True):
-            st.session_state["active_section"] = "Results"
-            st.rerun()
-
-    preview_cols = ["Lot", "Yield (%)", "Opportunity Gap (%)", "Risk Tier", "Primary Root Cause", "Recommended Action"]
-    st.dataframe(opps_df[preview_cols].head(5), use_container_width=True)
-
-
-# -----------------------------------------------------------------------------
-# Section: Analysis (Charts & Deep Exploration)
-# -----------------------------------------------------------------------------
-def render_analysis() -> None:
-    if not st.session_state.get("analysis_run") or st.session_state.get("cleaned_df") is None:
-        st.info("👈 Please execute yield analysis first via **'Data Input'** to view deep parameter analytics.")
-        return
-
-    df = st.session_state["cleaned_df"]
-    summary = st.session_state["summary"]
-    features = get_feature_columns(df)
-
-    st.markdown("### 📊 Process Parameter & Yield Analytics")
-    st.caption("Investigate relationships, correlation structures, and parameter excursions against yield.")
-
-    # Chronological / Lot Trendline
-    if "Lot" in df.columns:
-        st.markdown("#### 📈 Lot Yield Trendline")
-        fig_time = px.line(
-            df,
-            x="Lot",
-            y="Yield",
-            title="Wafer Lot Yield Trendline Over Run Sequence",
-            color_discrete_sequence=["#38bdf8"],
-        )
-        fig_time.add_hline(
-            y=summary["low_yield_threshold"],
-            line_dash="dash",
-            line_color="#ef4444",
-            annotation_text=f"Low Yield Cutoff ({summary['low_yield_threshold']}%)",
-        )
-        fig_time.add_hline(
-            y=summary["average_yield"],
-            line_dash="dot",
-            line_color="#10b981",
-            annotation_text=f"Average Yield ({summary['average_yield']}%)",
-        )
-        style_plot(fig_time, "Yield Performance Across Manufacturing Sequence", height=350)
-        st.plotly_chart(fig_time, use_container_width=True)
-
-    # Interactive Parameter Explorer
-    st.markdown("---")
-    st.markdown("#### 🔬 Parameter vs. Yield Scatter Analysis")
-    selected_param = st.selectbox("Select Process Parameter to Analyze:", features, index=0)
-
-    col_s1, col_s2 = st.columns([3, 2])
-    with col_s1:
-        # Scatter plot with trendline
-        try:
-            fig_scatter = px.scatter(
-                df,
-                x=selected_param,
-                y="Yield",
-                color="Defects",
-                trendline="ols",
-                title=f"{selected_param} vs. Yield (Color: Defects)",
-                color_continuous_scale="Plasma",
-                hover_data=["Lot"] if "Lot" in df.columns else None,
-            )
-        except Exception:
-            fig_scatter = px.scatter(
-                df,
-                x=selected_param,
-                y="Yield",
-                color="Defects",
-                title=f"{selected_param} vs. Yield (Color: Defects)",
-                color_continuous_scale="Plasma",
-                hover_data=["Lot"] if "Lot" in df.columns else None,
-            )
-        style_plot(fig_scatter, f"{selected_param} Impact on Lot Yield", height=400)
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-    with col_s2:
-        # Distribution of the selected parameter
-        fig_param_dist = px.histogram(
-            df,
-            x=selected_param,
-            nbins=30,
-            title=f"Distribution of {selected_param}",
-            color_discrete_sequence=["#a855f7"],
-        )
-        style_plot(fig_param_dist, f"{selected_param} Operating Range", height=400)
-        st.plotly_chart(fig_param_dist, use_container_width=True)
-
-    # Correlation Matrix
-    st.markdown("---")
-    st.markdown("#### 🧬 Parameter Correlation Matrix")
-    corr_cols = features + ["Yield"]
-    corr_matrix = df[corr_cols].corr().round(2)
-
-    fig_corr = px.imshow(
-        corr_matrix,
-        text_auto=True,
-        color_continuous_scale="RdBu_r",
-        aspect="auto",
-        title="Pearson Correlation Heatmap (Process Factors & Yield)",
-    )
-    style_plot(fig_corr, "Process Factors vs Yield Correlation Matrix", height=420)
-    st.plotly_chart(fig_corr, use_container_width=True)
-
-
-# -----------------------------------------------------------------------------
-# Section: Results & Opportunities
-# -----------------------------------------------------------------------------
-def render_results() -> None:
-    if not st.session_state.get("analysis_run") or st.session_state.get("opps_df") is None:
-        st.info("👈 Please execute yield analysis first via **'Data Input'** to view actionable results.")
-        return
-
-    opps_df = st.session_state["opps_df"]
-    summary = st.session_state["summary"]
-
-    st.markdown("### 🎯 Priority Yield Recovery Opportunities")
-    st.caption("Ranked lots with actionable root-cause diagnostics and parameter excursion recovery paths.")
-
-    # Filter by Risk Tier
-    filter_col1, filter_col2, filter_col3 = st.columns([1.5, 2, 2])
-    with filter_col1:
-        risk_options = ["All Lots", "High Risk Only", "Medium & High Risk", "Optimal Only"]
-        selected_filter = st.selectbox("Filter by Risk Tier:", risk_options, index=0)
-
-    if selected_filter == "High Risk Only":
-        filtered_df = opps_df[opps_df["Risk Tier"] == "High Risk"]
-    elif selected_filter == "Medium & High Risk":
-        filtered_df = opps_df[opps_df["Risk Tier"].isin(["High Risk", "Medium Risk"])]
-    elif selected_filter == "Optimal Only":
-        filtered_df = opps_df[opps_df["Risk Tier"] == "Optimal"]
-    else:
-        filtered_df = opps_df
-
-    with filter_col3:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        # Download Results CSV (Requirement 9)
-        csv_buffer = io.StringIO()
-        filtered_df.to_csv(csv_buffer, index=False)
-        st.download_button(
-            label="📥 Download Results CSV",
-            data=csv_buffer.getvalue(),
-            file_name=f"yield_hunter_opportunities_{int(time.time())}.csv",
-            mime="text/csv",
-            use_container_width=True,
-            help="Download the complete analyzed results including diagnosed excursion causes and corrective actions.",
+    with col_imp_stats:
+        top_factor = imp_df.iloc[0]["Factor"]
+        top_pct = imp_df.iloc[0]["Importance"]
+        st.markdown(
+            f"""
+            <div class="kpi-card" style="margin-top: 10px;">
+                <div class="kpi-label">Primary Variance Driver</div>
+                <div class="kpi-value">{top_factor}</div>
+                <div class="kpi-sub">Accounts for <b>{top_pct:.1f}%</b> of yield model variance</div>
+            </div>
+            <div style="font-size: 0.85rem; color: #475569; line-height: 1.5; padding: 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div><b>Model Quality:</b> R² = {trained.get('r2', 'N/A')}</div>
+                <div><b>Mean Residual Error:</b> {trained.get('mae', 'N/A')}% yield</div>
+                <div><b>Baseline Reference:</b> 75th Percentile healthy lots</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-    # Opportunity Summary Metrics
+    # Parameter Deep-Dive: Normal vs Excursion Lots Distribution
     st.markdown(
-        f"""
-        <div style="background:#1e293b; border:1px solid #334155; border-radius:8px; padding:0.8rem 1.2rem; margin-bottom:1rem; display:flex; gap:2rem; align-items:center;">
-            <div><span style="color:#94a3b8; font-size:0.85rem;">Showing Lots:</span> <strong>{len(filtered_df):,}</strong></div>
-            <div><span style="color:#94a3b8; font-size:0.85rem;">High Risk Excursions:</span> <strong style="color:#f43f5e;">{(opps_df['Risk Tier'] == 'High Risk').sum()}</strong></div>
-            <div><span style="color:#94a3b8; font-size:0.85rem;">Mean Opportunity Gap:</span> <strong style="color:#fbbf24;">+{filtered_df['Opportunity Gap (%)'].mean():.2f}%</strong></div>
+        """
+        <div class="section-card" style="margin-top: 1.5rem;">
+            <div class="section-title">Parameter Distribution: Healthy Lots vs Excursions</div>
+            <div class="section-desc">Comparing process parameter distributions between top quartile healthy lots (≥ 75th percentile yield) and bottom quartile excursions (≤ 25th percentile yield).</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Interactive Results Table
-    st.dataframe(filtered_df, use_container_width=True)
+    selected_feat = st.selectbox("Select Parameter to Inspect", features, index=0)
 
-    # Risk Tier Breakdown Visualization
-    st.markdown("---")
-    st.markdown("#### 📊 Risk Tier Breakdown")
-    tier_counts = opps_df["Risk Tier"].value_counts().reset_index()
-    tier_counts.columns = ["Risk Tier", "Lots"]
+    p75 = df["Yield"].quantile(0.75)
+    p25 = df["Yield"].quantile(0.25)
+    
+    df_compare = df.copy()
+    df_compare["Lot_Class"] = "Middle Range (25th - 75th Pct)"
+    df_compare.loc[df_compare["Yield"] >= p75, "Lot_Class"] = "Healthy Lots (≥ 75th Pct)"
+    df_compare.loc[df_compare["Yield"] <= p25, "Lot_Class"] = "Excursion Lots (≤ 25th Pct)"
 
-    color_map = {"High Risk": "#ef4444", "Medium Risk": "#f59e0b", "Optimal": "#10b981"}
-    fig_pie = px.pie(
-        tier_counts,
-        names="Risk Tier",
-        values="Lots",
-        color="Risk Tier",
-        color_discrete_map=color_map,
-        hole=0.45,
-        title="Lot Population by Risk Category",
+    fig_box = px.box(
+        df_compare,
+        x="Lot_Class",
+        y=selected_feat,
+        color="Lot_Class",
+        color_discrete_map={
+            "Healthy Lots (≥ 75th Pct)": "#059669",
+            "Middle Range (25th - 75th Pct)": "#64748b",
+            "Excursion Lots (≤ 25th Pct)": "#dc2626",
+        },
+        points="all",
     )
-    style_plot(fig_pie, "Manufacturing Population Risk Breakdown", height=350)
-    st.plotly_chart(fig_pie, use_container_width=True)
+    fig_box.update_layout(showlegend=False, xaxis_title="", yaxis_title=f"{selected_feat} Value")
+    fig_box = apply_clean_theme(fig_box, height=350)
+    st.plotly_chart(fig_box, use_container_width=True)
 
+    # Formal 8D Corrective Action Protocol (RCCA)
+    st.markdown(
+        """
+        <div class="section-card" style="margin-top: 1.5rem;">
+            <div class="section-title">Engineering Root-Cause Corrective Action (RCCA) Protocol</div>
+            <div class="section-desc">Standard operating procedures (SOP) and diagnostic containment checks for flagged process excursions.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-# -----------------------------------------------------------------------------
-# Section: Future Lot Prediction (Requirement & Core Logic Preservation)
-# -----------------------------------------------------------------------------
-def render_future_lot_prediction() -> None:
-    if not st.session_state.get("analysis_run") or st.session_state.get("trained") is None:
-        st.info("👈 Please execute yield analysis first via **'Data Input'** to train the prediction model.")
-        return
+    rcca_data = [
+        {
+            "Parameter": "Temperature",
+            "Nominal Reference": f"{trained['baseline'].get('Temperature', {}).get('median', 450.0):.1f} °C",
+            "Common Failure Mode": "Furnace thermocouple drift, heater element aging, PID loop oscillation",
+            "Immediate Containment": "Pause lot dispatch to chamber; verify pyrometer/thermocouple calibration",
+            "Corrective Action": "Inspect preventive maintenance records; calibrate heater zones against master probe",
+        },
+        {
+            "Parameter": "Pressure",
+            "Nominal Reference": f"{trained['baseline'].get('Pressure', {}).get('median', 2.2):.2f} Torr",
+            "Common Failure Mode": "Foreline throttle valve stick, vacuum seal micro-leak, roughing pump degradation",
+            "Immediate Containment": "Run helium leak check; verify capacitance manometer zero point",
+            "Corrective Action": "Service throttle valve O-rings; check turbo pump backing pressure logs",
+        },
+        {
+            "Parameter": "Power",
+            "Nominal Reference": f"{trained['baseline'].get('Power', {}).get('median', 800.0):.1f} W",
+            "Common Failure Mode": "RF matching network capacitor wear, generator reflected power imbalance",
+            "Immediate Containment": "Review RF match tuning curves; verify delivered forward vs reflected power",
+            "Corrective Action": "Recalibrate RF generator match network; inspect plasma dark-space shields",
+        },
+        {
+            "Parameter": "Defects",
+            "Nominal Reference": f"{trained['baseline'].get('Defects', {}).get('median', 3.0):.0f} / wafer",
+            "Common Failure Mode": "Chamber wall flaking, electrostatic chuck particle shedding, robot arm friction",
+            "Immediate Containment": "Initiate automated SEM review for defect spatial signature classification",
+            "Corrective Action": "Perform chamber wet-clean cycle; swap gas delivery filter elements",
+        },
+        {
+            "Parameter": "GasFlow",
+            "Nominal Reference": f"{trained['baseline'].get('GasFlow', {}).get('median', 120.0):.1f} sccm",
+            "Common Failure Mode": "Mass Flow Controller (MFC) sensor zero shift, valve solenoid sticking",
+            "Immediate Containment": "Verify line supply delivery pressure; perform MFC rate-of-rise test",
+            "Corrective Action": "Recalibrate MFC transducer; replace gas inlet filter manifold",
+        },
+    ]
 
-    df = st.session_state["cleaned_df"]
-    trained = st.session_state["trained"]
+    st.dataframe(pd.DataFrame(rcca_data), use_container_width=True, hide_index=True)
+
+# ---------------------------------------------------------------------------
+# MODULE 4: Lot Risk Simulator
+# ---------------------------------------------------------------------------
+elif page == "Lot Risk Simulator":
+    st.markdown(
+        """
+        <div class="section-card">
+            <div class="section-title">Planned Lot Risk & Yield Simulator</div>
+            <div class="section-desc">Evaluate upcoming production run parameters against historical baseline models to preemptively identify risk and excursions before wafer processing.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     features = trained["features"]
-
-    st.markdown("### ⚠️ Future Lot Risk & Yield Prediction")
-    st.caption("Simulate an upcoming manufacturing lot before dispatch to detect potential excursions and prevent yield losses.")
-
-    st.markdown("#### Input Planned Process Parameters")
     defaults = {f: float(df[f].median()) for f in features}
-    input_values = {}
+    stds = {f: float(df[f].std()) for f in features}
 
+    # Recipe Quick-Presets Row
+    st.markdown("##### Recipe Presets")
+    col_pre1, col_pre2, col_pre3, col_pre4 = st.columns([1, 1, 1, 1])
+
+    if "preset_values" not in st.session_state:
+        st.session_state["preset_values"] = defaults.copy()
+
+    with col_pre1:
+        if st.button("Nominal Recipe (Healthy)", use_container_width=True):
+            st.session_state["preset_values"] = {
+                "Temperature": 450.0,
+                "Pressure": 2.20,
+                "Power": 800.0,
+                "Defects": 2.0,
+                "GasFlow": 120.0 if "GasFlow" in features else None,
+            }
+            st.rerun()
+
+    with col_pre2:
+        if st.button("Thermal Excursion Recipe", use_container_width=True):
+            st.session_state["preset_values"] = {
+                "Temperature": 475.0,
+                "Pressure": 2.20,
+                "Power": 805.0,
+                "Defects": 14.0,
+                "GasFlow": 120.0 if "GasFlow" in features else None,
+            }
+            st.rerun()
+
+    with col_pre3:
+        if st.button("High Stress Process Run", use_container_width=True):
+            st.session_state["preset_values"] = {
+                "Temperature": 472.0,
+                "Pressure": 2.90,
+                "Power": 845.0,
+                "Defects": 22.0,
+                "GasFlow": 124.0 if "GasFlow" in features else None,
+            }
+            st.rerun()
+
+    with col_pre4:
+        if st.button("Reset to Median Baseline", use_container_width=True):
+            st.session_state["preset_values"] = defaults.copy()
+            st.rerun()
+
+    # Input Form
+    st.markdown("---")
+    st.markdown("##### Planned Process Setpoints")
+
+    input_values = {}
     cols = st.columns(len(features))
+
     for i, feat in enumerate(features):
         with cols[i]:
-            input_values[feat] = st.number_input(
-                f"{feat}",
-                value=round(defaults[feat], 2),
-                format="%.2f",
-                key=f"predict_input_{feat}",
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🔍 Predict Lot Risk & Performance", type="primary"):
-        try:
-            result = predict_new_lot(trained, input_values)
-            predicted_yield = result["predicted_yield"]
-            risk = result["risk"]
-            findings = result["findings"]
-
-            risk_cfg = {
-                "LOW": ("🟢", "#10b981", "Optimal Operating Regime"),
-                "MEDIUM": ("🟡", "#f59e0b", "Moderate Excursion Risk"),
-                "HIGH": ("🔴", "#ef4444", "Critical Excursion Risk"),
-            }
-            icon, color, label = risk_cfg.get(risk, ("⚪", "#94a3b8", "Unknown"))
-
+            nom_val = defaults.get(feat, 0.0)
+            cur_preset = st.session_state["preset_values"].get(feat, nom_val)
+            unit = "°C" if feat == "Temperature" else ("Torr" if feat == "Pressure" else ("W" if feat == "Power" else ("sccm" if feat == "GasFlow" else "dies")))
+            
             st.markdown(
                 f"""
-                <div style="background:#1e293b; border:2px solid {color}; border-radius:12px; padding:1.5rem; margin-top:1rem;">
-                    <div style="font-size:0.9rem; font-weight:600; text-transform:uppercase; color:#94a3b8;">Prediction Result</div>
-                    <div style="font-size:2rem; font-weight:800; color:{color}; margin-top:0.3rem;">
-                        {icon} {risk} RISK &nbsp;—&nbsp; <span style="font-size:1.4rem; color:#f8fafc;">Predicted Yield: <strong>{predicted_yield:.2f}%</strong></span>
+                <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 2px;">
+                    Nominal: <b>{nom_val:.1f}</b> {unit}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            input_values[feat] = st.number_input(
+                f"{feat} ({unit})",
+                value=float(cur_preset),
+                format="%.2f",
+                key=f"sim_input_{feat}",
+            )
+
+    run_sim = st.button("RUN RISK SIMULATION", type="primary", use_container_width=False)
+
+    # Run Prediction Automatically or on Click
+    if run_sim or "last_sim_result" in st.session_state:
+        result = predict_new_lot(trained, input_values)
+        st.session_state["last_sim_result"] = result
+
+        risk_level = result["risk"]
+        pred_yield = result["predicted_yield"]
+
+        if risk_level == "LOW":
+            pill_class = "pill-low"
+            risk_desc = "Process setpoints are within nominal operating tolerances. Low excursion probability."
+        elif risk_level == "MEDIUM":
+            pill_class = "pill-medium"
+            risk_desc = "Moderate parameter deviation detected. Process monitoring recommended."
+        else:
+            pill_class = "pill-high"
+            risk_desc = "Significant parameter excursions detected. High risk of yield degradation below threshold."
+
+        # Risk Scoreboard
+        st.markdown(
+            f"""
+            <div class="sim-card">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <div class="kpi-label">Simulation Assessment</div>
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #0f172a; margin-top: 0.2rem;">
+                            Predicted Yield: <span style="color: #0f62fe;">{pred_yield}%</span>
+                        </div>
+                        <div style="font-size: 0.88rem; color: #475569; margin-top: 0.35rem;">
+                            {risk_desc}
+                        </div>
                     </div>
-                    <div style="color:#94a3b8; font-size:0.9rem; margin-top:0.3rem;">{label}</div>
+                    <div>
+                        <span class="status-pill {pill_class}" style="font-size: 0.95rem; padding: 6px 14px;">
+                            {risk_level} RISK
+                        </span>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Findings & Parameter Deviations
+        findings = result.get("findings", [])
+        if findings:
+            st.markdown("##### Parameter Excursion Diagnostics")
+            
+            dev_rows = []
+            for f in findings:
+                factor = f["factor"]
+                dev_rows.append({
+                    "Parameter": factor,
+                    "Planned Input": input_values.get(factor),
+                    "Healthy Median": f"{trained['baseline'][factor]['median']:.2f}",
+                    "Deviation (Z-Score)": f["z_score"],
+                    "Direction": f["direction"].upper(),
+                    "First-Line Recommendation": f["actions"][0] if f["actions"] else "Monitor process closely",
+                })
+            
+            st.dataframe(pd.DataFrame(dev_rows), use_container_width=True, hide_index=True)
+
+            with st.expander("Detailed Remediation Protocols", expanded=True):
+                for f in findings:
+                    st.markdown(f"**{f['factor']} Excursion Protocol**")
+                    for act in f["actions"]:
+                        st.markdown(f"- {act}")
+        else:
+            st.markdown(
+                """
+                <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 12px 16px; color: #065f46; font-size: 0.88rem;">
+                    All process parameters are within expected historical operating limits (|Z| < 1.5). No excursions identified.
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            if findings:
-                st.markdown("#### ⚠️ Abnormal Parameter Diagnostics (Z-Score Deviation)")
-                for f in findings:
-                    st.warning(f"**{f['factor']}** is abnormally **{f['direction'].upper()}** (Z-Score: `{f['z_score']:+.2f}`). {f['message']}")
-                    with st.expander(f"🛠️ Recommended Corrective Action for {f['factor']}"):
-                        for action in f["actions"]:
-                            st.write(f"→ **{action}**")
-            else:
-                st.success("✅ All planned parameters are within the healthy operating baseline. No excursion red flags detected.")
+        # Simulation Report Export
+        sim_summary_df = pd.DataFrame([{
+            "Predicted_Yield": pred_yield,
+            "Risk_Level": risk_level,
+            **input_values,
+            "Flagged_Excursions": len(findings),
+        }])
+        sim_csv = sim_summary_df.to_csv(index=False)
+        st.download_button(
+            label="Export Simulation Run Report (CSV)",
+            data=sim_csv,
+            file_name="simulated_lot_assessment.csv",
+            mime="text/csv",
+        )
 
-        except Exception as e:
-            st.error(f"Prediction failed: {str(e)}")
-
-
-# -----------------------------------------------------------------------------
-# Section: About Platform
-# -----------------------------------------------------------------------------
-def render_about() -> None:
-    st.markdown("### ℹ️ About Yield Hunter Platform")
-    st.markdown(
-        """
-        **Yield Hunter** is an enterprise-grade semiconductor decision-support platform designed to automate
-        wafer lot yield root-cause diagnostics, identify yield recovery opportunities, and predict risk for future runs.
-
-        ---
-
-        #### 🏗️ Architecture & Scientific Methodology
-        1. **Association Ranking vs. Causality**:
-           Yield Hunter trains a Random Forest ensemble to identify factors with the highest statistical association to yield variability.
-           This ranking highlights parameters most strongly correlated with yield loss without making unverified causal assumptions.
-        2. **Transparent Rule-Based Diagnostics**:
-           Unlike opaque black-box AI tools, Yield Hunter evaluates deviations against a historical baseline derived from the fab's top-performing lots (75th percentile).
-           Parameters exceeding 1.5 standard deviations trigger actionable, fab-validated recommendations.
-        3. **Opportunity Sizing**:
-           Every low-yield lot is benchmarked against optimal lot performance, calculating exact recovery potential and identifying the primary excursion driver.
-
-        ---
-
-        #### 📦 Tech Stack
-        - **Core Engine**: Python 3.10+, Pandas, NumPy, Scikit-Learn (`RandomForestRegressor`), Statsmodels
-        - **Visual Analytics**: Plotly Express & Plotly Graph Objects
-        - **Deployment**: Streamlit Cloud Native
-        """
-    )
-
-
-# -----------------------------------------------------------------------------
-# Main Router
-# -----------------------------------------------------------------------------
-def main() -> None:
-    render_header()
-    active_view = render_sidebar()
-
-    if active_view == "Dashboard":
-        render_dashboard()
-    elif active_view == "Data Input":
-        render_data_input()
-    elif active_view == "Analysis":
-        render_analysis()
-    elif active_view == "Results":
-        render_results()
-    elif active_view == "Future Lot Prediction":
-        render_future_lot_prediction()
-    elif active_view == "About":
-        render_about()
-
-
-if __name__ == "__main__":
-    main()
+# ---------------------------------------------------------------------------
+# Footer
+# ---------------------------------------------------------------------------
+st.markdown("---")
+st.markdown(
+    """
+    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: #94a3b8; padding: 0.5rem 0;">
+        <div>Wafer Yield Intelligence Platform | Fab Operations Decision Support</div>
+        <div>Standard Process Capability Monitoring</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
